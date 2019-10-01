@@ -176,35 +176,31 @@ namespace Dnn.PersonaBar.TaskScheduler.Components
         /// <returns>List of recommended servers</returns>
         public IEnumerable<string> GetRecommendedServers(int schedulerId)
         {
-            var recommendedServers = new List<string>();
-
             var schedulersToRunOnSameWebServer = HostController.Instance.GetString(
                 "SchedulersToRunOnSameWebServer", 
                 string.Empty);
 
-            var schedulers = schedulersToRunOnSameWebServer.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+            var schedulers = schedulersToRunOnSameWebServer.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(x => x.Trim());
 
-            if (!schedulers.Any() || !schedulers.Select(x => x.Trim()).Contains(schedulerId.ToString()))
+            if (!schedulers.Contains(schedulerId.ToString()))
             {
-                return recommendedServers;
+                return Enumerable.Empty<string>();
             }
-
-            foreach (var scheduler in schedulers)
+            else
             {
-                if (!int.TryParse(scheduler.Trim(), out int id) || id == schedulerId)
-                {
-                    continue;
-                }
+                var scheduleServerLists = schedulers
+                    .Select(scheduler => int.TryParse(scheduler, out int id) ? id : Null.NullInteger)
+                    .Where(id => id != Null.NullInteger && id != schedulerId)
+                    .Select(id => SchedulingProvider.Instance().GetSchedule(id))
+                    .Where(schedule => schedule != null && schedule.Enabled && !string.IsNullOrWhiteSpace(schedule.Servers));
 
-                var schedule = SchedulingProvider.Instance().GetSchedule(id);
-
-                if (schedule != null && schedule.Enabled && !string.IsNullOrWhiteSpace(schedule.Servers))
-                {
-                    recommendedServers.AddRange(schedule.Servers.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries));
-                }
+                return scheduleServerLists.Any() ? scheduleServerLists
+                    .SelectMany(schedule => schedule.Servers.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
+                    .Select(x => x.Trim())
+                    .Distinct()
+                    .OrderBy(x => x) : Enumerable.Empty<string>();
             }
-
-            return recommendedServers.Distinct().OrderBy(x => x);
         }
     }
 }
